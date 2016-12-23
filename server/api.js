@@ -13,6 +13,7 @@ api.post('/queries', (req, res, next) => {
   Query.create({
       title: req.body.title,
       handles: req.body.handles,
+      userIds: req.body.userIds,
       terms: req.body.terms,
       phone: req.body.phone
     })
@@ -23,7 +24,7 @@ api.post('/queries', (req, res, next) => {
 })
 
 // add a result for a particular user's query
-api.post('/queries/:queryId', (req, res, next) => {
+api.post('/queries/:queryId/results', (req, res, next) => {
   Result.create({
       handle: req.body.handle,
       imgUrl: req.body.imgUrl,
@@ -65,13 +66,13 @@ api.delete('/queries/:queryId', (req, res, next) => {
 })
 
 // delete a single result
-api.delete('/queries/:queryId/:resultId', (req, res, next) => {
+api.delete('/queries/:queryId/results/:resultId', (req, res, next) => {
   Result.destroy({
       where: {
         id: req.params.resultId
       },
     })
-    .then(res => res.status(204))  // no content
+    .then(ok => res.status(204))  // no content
     .catch(next)
 })
 

@@ -16,7 +16,7 @@ export default class Navbar extends Component {
             </Link>
             <ul className="right hide-on-med-and-down">
               <li>
-              Rewards for the Curious
+                <Link to="/myperqs">My Perqs</Link>
               </li>
             </ul>
           </div>

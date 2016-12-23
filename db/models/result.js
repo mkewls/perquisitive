@@ -9,6 +9,7 @@ const Result = db.define('result', {
     notNull: true
   },
   imgUrl: Sequelize.STRING,
+  tweetId: Sequelize.STRING,
   text: Sequelize.TEXT,
   timestamp: Sequelize.STRING
 })

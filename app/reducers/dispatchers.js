@@ -1,96 +1,142 @@
 import axios from 'axios'
 import { browserHistory } from 'react-router'
-import { addQuery, loadQueries, removeQuery, removeResult } from './index'
-import { getIds, streamFilter } from '../../server/twitterAPI'
+// reducers
+import { addQuery, loadQueries, removeQuery } from './queries'
+import { addResult, removeResult } from './results'
+// twitter config
+import Twitter from 'twitter'
+import { CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN_KEY, ACCESS_TOKEN_SECRET } from '../../secrets'
 
-// -=-=-=-= DISPATCHERS =-=-=-=-=-
+const client = new Twitter({
+  consumer_key: CONSUMER_KEY,
+  consumer_secret: CONSUMER_SECRET,
+  access_token_key: ACCESS_TOKEN_KEY,
+  access_token_secret: ACCESS_TOKEN_SECRET
+})
 
-// -=-= CREATE =-=-
+const FILTER_TABLE = {} // hash table storage
 
 // START HERE ==> 1/ query received from user and formatted
 export const formatQuery = (query) => (dispatch) => {
-  // format twitter handles...
-  let handles = query.handles.includes(',') ?
-    query.handles.split(',') : query.handles.split(' ')  // make array
+  let handles = query.handles.split(/[\s,]+/)  // make array
   handles = handles.map(handle => {
-    if (handle.charAt(0) === '@') return handle.slice(1) // slice off '@'
+    if (handle.charAt(0) === '@') return handle.slice(1).toLowerCase()  // slice off '@'
+    return handle.toLowerCase()
   })
-  handles = handles.join(',')  // return to string format with commas for twitter api
-  // ...to get twitter user ids
-  // TODO
-  //const userIds = getIds(handles)  // query twitter api via getIds()
+  // return to string format with commas for twitter api
+  handles = handles.join(',')
+  // format query terms too
+  let terms = query.terms.toLowerCase().split(/[\s,]+/)
 
-  // format terms
-  let terms = query.terms.includes(',') ?
-    query.terms : query.terms.split(' ').join(',')
+  query.handles = handles
+  query.terms = terms
 
-  const formattedQuery = {
-    title: query.title,
-    handles: handles,
-    terms: terms,
-    phone: query.phone
-  }
-  dispatch(postQuery(formattedQuery))
+  dispatch(getIds(query))  // query twitter api via getIds()
 }
 
-// 2/ formatted query is added to the database, then dispatched to
+// 2/ formatted query handles are passed to an id look-up;
+// user ids, not handles, are needed to filter streaming data
+export const getIds = (query) => (dispatch) => {
+  let ids = []
+  // look-up twitter ids using handles
+  client.get('users/lookup', { screen_name: query.handles }, (error, tweets, response) => {
+    if (error) throw error
+    ids = tweets.map(tweet => {
+      if (tweet.id) return tweet.id
+    }).join(',')
+    dispatch(addIdsToQuery(query, ids))
+  })
+}
+
+// 3/ Put the Ids into a query to add to db
+export const addIdsToQuery = (query, ids) => (dispatch)=> {
+  let newQuery = {
+    title: query.title,
+    handles: query.handles,
+    userIds: ids,
+    terms: query.terms,
+    phone: query.phone
+  }
+  dispatch(postQuery(newQuery))
+}
+
+// 4/ query is added to the database, then dispatched to
 // the TwitterAPI and to the Redux Store for rendering on the page
-export const postQuery = (formattedQuery) => (dispatch) => {
-  axios.post('/api/queries', formattedQuery)
+export const postQuery = (newQuery) => (dispatch) => {
+  axios.post('/api/queries', newQuery)
     .then(query => {
       let storedQuery = {
           id: query.data.id,
           title: query.data.title,
           handles: query.data.handles,
+          userIds: query.data.userIds,
           terms: query.data.terms,
           phone: query.data.phone
         }
-      // TODO dispatch(streamFilter(storedQuery.userIds, storedQuery.terms))
-      dispatch(addQuery(storedQuery))
+      dispatch(streamFilter(storedQuery))
     })
     .then(() => browserHistory.push('/myperqs'))
     .catch(err => console.error(err))
 }
 
-// TODO
-// 3/ receive a matched tweet and ensure it is part of a query
-// export const checkResult = (tweet) => (dispatch) => {
-//   axios.post(`/api/results`, tweet)
-//     .then(result => {
-//       let queryId = result.data.queryId
-//       dispatch(postResult(queryId, tweet))
-//     })
-//     .catch(err => console.error(err))
-// }
+// 5/ add query ids and terms to the twitter streaming filter
+export const streamFilter = (query) => dispatch => {
+  let queryId = query.id, ids = query.userIds, terms = query.terms
 
-// 4/ if and when a tweets matches a query, post to the database and
-// add it to the Redux store for rendering on the page
+  FILTER_TABLE[`${queryId}`] = {
+    ids,   // string
+    terms  // array
+  }
 
-// -=-= READ =-=-
-// fetch all queries
-export const fetchQueries = () => (dispatch) => {
-  axios.get(`/api/queries`)
-    .then(queries => {
-      let fetchedQueries = queries.data.sort((x,y) => {
-        return y.id - x.id  // sort by most recent
-      })
-      dispatch(loadQueries(fetchedQueries))
+  let filterIds = '', filterTerms = [], keys = Object.keys(FILTER_TABLE)
+  for (let key of keys) {
+    filterIds += FILTER_TABLE[key]['ids'],
+    filterTerms = filterTerms.concat(FILTER_TABLE[key]['terms'])
+  }
+
+  client.stream('statuses/filter', { follow: filterIds }, (stream) => {
+    console.log('Filtering Twitter stream...')
+    stream.on('data', (tweet) => {               // receive back any id-matched tweets
+      let check = filterTerms.some(term => tweet.text.indexOf(term) >= 0)  // check for term
+      if (check)
+        dispatch(matchedTweet(tweet))            // if yes, dispatch tweet
     })
-    .catch(err => console.error(err))
+    stream.on('error', (error) => {              // error catching
+      throw error
+    })
+  })
 }
 
-// -=-= DELETE =-=-
-// destroy a query and all its results
-export const queryDestroyer = (queryId) => (dispatch) => {
-  dispatch(removeQuery(queryId))
-  axios.delete(`/api/queries/${queryId}`)
-  .then()
-  .catch(err => console.error(err))
+// 6/ receive a matched tweet and ensure it is part of a query
+export const matchedTweet = (tweet) => (dispatch) => {
+  let keys = Object.keys(FILTER_TABLE), queryIds = []
+
+  for (let key of keys) {
+    let termsArr = FILTER_TABLE[key]['terms']
+    if (FILTER_TABLE[key]['ids'].includes(tweet.user.id) &&
+      termsArr.some(term => tweet.text.indexOf(term >= 0))) {
+        queryIds.push(key)
+      }
+  }
+  while (queryIds.length > 0) {
+    let result = {
+      handle: tweet.user.screen_name,
+      imgUrl: tweet.user.profile_image_url_https,
+      tweetId: tweet.id_str,
+      text: tweet.text,
+      timestamp: tweet.created_at,
+      queryId: queryIds.pop()
+    }
+    dispatch(postResult(result))
+  }
 }
 
-// remove a result
-export const resultDestroyer = (queryId, resultId) => (dispatch) => {
-  axios.delete(`/api/results/${queryId}/${resultId}`)
-    .then(ok => { dispatch(removeResult(resultId)) })
+// 7/ if and when a tweets matches a query, post to the database and
+// add it to the Redux store for rendering on the page
+export const postResult = (tweet) => (dispatch) => {
+  axios.post(`/api/queries/${tweet.queryId}/results`, tweet)
+    .then(result => {
+      dispatch(addResult(result.data))
+    })
     .catch(err => console.error(err))
 }

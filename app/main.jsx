@@ -11,7 +11,7 @@ import Create from './components/Create'
 import Perqs from './components/Perqs'
 
 // import dispatch fetch
-import { fetchQueries } from './reducers/dispatchers'
+import { fetchQueries } from './reducers/queries'
 
 // onEnter for Queries
 const onPerqsEnter = () => {

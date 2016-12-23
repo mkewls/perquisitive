@@ -75,6 +75,7 @@ export default class CreateForm extends Component {
                 placeholder="@AP, @StockTwits"
                 name="twitterHandle"
                 type="text"
+                className="validate"
                 value={ this.state.handles }
                 onChange={ (evt) => this.onInputChange('handles', evt.target.value) }
               />

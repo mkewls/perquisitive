@@ -16,14 +16,13 @@ const Query = db.define('query', {
       notEmpty: true
     }
   },
-  // TODO
-  // userIds: {
-  //   type: Sequelize.STRING,
-  //   validate: {
-  //     notEmpty: true
-  //   }
-  // },
-  terms: Sequelize.STRING,
+  userIds: {
+    type: Sequelize.STRING,
+    validate: {
+      notEmpty: true
+    }
+  },
+  terms: Sequelize.ARRAY(Sequelize.STRING),
   phone: {
     type: Sequelize.STRING,
     validate: {
