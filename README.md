@@ -1,4 +1,4 @@
-# Steps
+# Perquisitive
 
 _Perquisites Meet Inquisitive: Rewards for the Curious_
 
