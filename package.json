@@ -7,7 +7,7 @@
     "test": "",
     "build": "webpack",
     "build-watch": "webpack -w",
-    "start": "nodemon server/app.js"
+    "start": "node server/app.js"
   },
   "author": "Mike Williams",
   "license": "MIT",
